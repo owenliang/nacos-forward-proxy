@@ -1,2 +1,2 @@
-# nacos-reverse-proxy
-nacos http rpc反向代理
+# nacos-forward-proxy
+nacos http rpc正向代理
