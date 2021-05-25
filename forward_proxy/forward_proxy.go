@@ -3,28 +3,77 @@ package forward_proxy
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 )
 
 // 正向HTTP(S)代理
 type ForwardProxy struct {
-	server *http.Server
+	server    *http.Server
+	dialer    *net.Dialer
+	transport http.Transport
 }
 
 // HTTPS
 func (forwardProxy *ForwardProxy) handleHttpsRequest(rw http.ResponseWriter, req *http.Request) {
-	rw.WriteHeader(http.StatusOK) // 协商完成
+	var err error
 
-	// TODO: TLS原生流量转发
+	for {
+		// 建立到服务端的TCP连接
+		var serverConn net.Conn
+		for i := 0; i < 3; i++ {
+			func() { // 监听客户端侧关闭，随即中断服务端侧的请求
+				ctx, cancelFunc := context.WithCancel(context.TODO())
+				defer cancelFunc()
+				go func() {
+					select {
+					case <-req.Context().Done():
+						cancelFunc()
+					case <-ctx.Done():
+					}
+				}()
+				// 建连到服务端
+				// TODO：服务发现在此展开
+				serverConn, err = forwardProxy.dialer.DialContext(ctx, "tcp", req.Host)
+			}()
+			if err == nil {
+				break
+			}
+		}
+		if err == nil {
+			defer serverConn.Close()
+		} else {
+			break // 连接失败
+		}
+
+		// 接管客户端侧的TCP连接
+		var clientConn net.Conn
+		if hijacker, ok := rw.(http.Hijacker); ok {
+			if clientConn, _, err = hijacker.Hijack(); err != nil {
+				break
+			}
+			defer clientConn.Close() // 接管成功，确保离开前关闭
+		} else { // 接管失败
+			break
+		}
+
+		// 回复客户端HTTPS握手
+		if _, err = clientConn.Write([]byte("HTTP/1.0 200 Connection Established\r\n\r\n")); err != nil {
+			return
+		}
+
+		// 等待转发完成
+		var transferPair = NewTransferPair(clientConn, serverConn)
+		transferPair.DoTransfer()
+	}
 }
 
 func (forwardProxy *ForwardProxy) transferHttpRequest(req *http.Request) (resp *http.Response, respBody []byte, err error) {
 	// TODO：服务发现在此展开
 
 	// 发送请求
-	if resp, err = http.DefaultTransport.RoundTrip(req); err != nil {
+	if resp, err = forwardProxy.transport.RoundTrip(req); err != nil {
 		return
 	}
 	// 读取应答
@@ -111,8 +160,6 @@ func (forwardProxy *ForwardProxy) handleHttpRequest(rw http.ResponseWriter, req 
 
 // 请求入口
 func (forwardProxy *ForwardProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	fmt.Println("原始请求:", req.Method, req.URL)
-
 	if req.Method == http.MethodConnect { // HTTPS
 		forwardProxy.handleHttpsRequest(rw, req)
 	} else { // HTTP
@@ -123,6 +170,8 @@ func (forwardProxy *ForwardProxy) ServeHTTP(rw http.ResponseWriter, req *http.Re
 // 新建HTTP正向代理
 func NewForwardProxy() (forwardProxy *ForwardProxy, err error) {
 	forwardProxy = &ForwardProxy{}
+	forwardProxy.dialer = &net.Dialer{}
+	forwardProxy.transport = http.Transport{DisableKeepAlives: true}
 
 	// 启动HTTP服务
 	forwardProxy.server = &http.Server{
