@@ -100,7 +100,7 @@ func (nsd *NacosServiceDiscovery) SelectInstance(options *SelectInstanceOptions)
 	// 1，拉nacos节点列表
 	// 2，进行diff
 	// 3，选择一个健康的，其含义是：nacos在线、并且没有熔断的。
-	// 4，
+	// 4，如果没有健康的，那么返回失败率最低的。
 	return
 }
 
