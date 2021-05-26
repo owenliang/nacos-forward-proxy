@@ -80,10 +80,36 @@ func (nsd *NacosServiceDiscovery) UnRegisterService(options *UnRegisterServiceOp
 
 // 更新服务信息
 func (nsd *NacosServiceDiscovery) UpdateService(options *UpdateServiceOptions) (err error) {
+	_, err = nsd.nacosClient.RegisterInstance(vo.RegisterInstanceParam{
+		Ip:          options.Ip,
+		Port:        options.Port,
+		ServiceName: options.ServiceName,
+		Weight:      options.Weight,
+		Healthy:     true,
+		Enable:      options.Enable,
+		Ephemeral:   true,
+		ClusterName: nsd.sdConfig.Cluster,
+		GroupName:   nsd.sdConfig.Group,
+	})
 	return
 }
 
 // 服务发现节点
 func (nsd *NacosServiceDiscovery) SelectInstance(options *SelectInstanceOptions) (instance *ServiceInstance, err error) {
+	// TODO:
+	// 1，拉nacos节点列表
+	// 2，进行diff
+	// 3，选择一个健康的，其含义是：nacos在线、并且没有熔断的。
+	// 4，
 	return
+}
+
+// 节点"正常+1"
+func (nsd *NacosServiceDiscovery) MarkInstanceSuccess(options *MarkInstanceOptions) {
+
+}
+
+// 节点"异常+1"
+func (nsd *NacosServiceDiscovery) MarkInstanceFail(options *MarkInstanceOptions) {
+
 }

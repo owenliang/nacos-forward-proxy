@@ -6,6 +6,10 @@ import (
 )
 
 func TestMain(t *testing.T) {
+	serviceName := "liangdong"
+	ip := "127.0.0.1"
+	var port uint64 = 8888
+
 	sdConfig := &NacosSDConfig{
 		Namespace:  "myns",
 		Cluster:    "main",
@@ -16,9 +20,9 @@ func TestMain(t *testing.T) {
 		t.Fatal(err)
 	} else {
 		err = nsd.RegisterService(&RegisterServiceOptions{
-			ServiceName: "liangdong",
-			Ip:          "127.0.0.1",
-			Port:        8888,
+			ServiceName: serviceName,
+			Ip:          ip,
+			Port:        port,
 			Weight:      1,
 			Enable:      true,
 		})
@@ -26,10 +30,23 @@ func TestMain(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer nsd.UnRegisterService(&UnRegisterServiceOptions{
-			ServiceName: "liangdong",
-			Ip:          "127.0.0.1",
-			Port:        8888,
+			ServiceName: serviceName,
+			Ip:          ip,
+			Port:        port,
 		})
+
+		// 睡5秒
+		time.Sleep(5 * time.Second)
+		// 更新状态
+		nsd.UpdateService(&UpdateServiceOptions{
+			ServiceName: serviceName,
+			Ip:          ip,
+			Port:        port,
+			Weight:      5,
+			Enable:      true,
+		})
+		// 再睡30秒
+		time.Sleep(31 * time.Second)
 	}
-	time.Sleep(30 * time.Second)
+
 }

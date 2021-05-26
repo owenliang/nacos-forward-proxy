@@ -30,10 +30,18 @@ type SelectInstanceOptions struct {
 	ServiceName string
 }
 
+// 节点标记
+type MarkInstanceOptions struct {
+	ServiceName string
+	ID          string
+}
+
 // 服务节点
 type ServiceInstance struct {
-	Ip   string
-	Port uint64
+	ServiceName string
+	ID          string
+	Ip          string
+	Port        uint64
 }
 
 // 服务注册/发现接口
@@ -49,4 +57,10 @@ type IServiceDiscovery interface {
 
 	// 服务发现节点
 	SelectInstance(options *SelectInstanceOptions) (instance *ServiceInstance, err error)
+
+	// 节点"正常+1"
+	MarkInstanceSuccess(options *MarkInstanceOptions)
+
+	// 节点"异常+1"
+	MarkInstanceFail(options *MarkInstanceOptions)
 }
