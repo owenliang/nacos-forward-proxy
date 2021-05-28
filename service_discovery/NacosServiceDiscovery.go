@@ -52,6 +52,8 @@ func (nacosService *NacosService) markInstance(id string, success bool) {
 	}
 
 	// todo：给instance的熔断器输入suceess
+	instance.mu.Lock()
+	defer instance.mu.Unlock()
 	if success {
 		instance.id = id
 	} else {
