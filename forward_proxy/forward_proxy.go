@@ -3,74 +3,98 @@ package forward_proxy
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
+
+	"github.com/owenliang/nacos-reverse-proxy/service_discovery"
 )
+
+// 配置
+type ForwardProxyConfig struct {
+	ListenAddr string                              // 代理监听地址
+	Sd         service_discovery.IServiceDiscovery // 服务发现
+	RetryTimes int
+}
 
 // 正向HTTP(S)代理
 type ForwardProxy struct {
 	server    *http.Server
 	dialer    *net.Dialer
 	transport http.Transport
+	config    *ForwardProxyConfig
 }
 
 // HTTPS
 func (forwardProxy *ForwardProxy) handleHttpsRequest(rw http.ResponseWriter, req *http.Request) {
 	var err error
 
-	for {
-		// 建立到服务端的TCP连接
-		var serverConn net.Conn
-		for i := 0; i < 3; i++ {
-			func() { // 监听客户端侧关闭，随即中断服务端侧的请求
-				ctx, cancelFunc := context.WithCancel(context.TODO())
-				defer cancelFunc()
-				go func() {
-					select {
-					case <-req.Context().Done():
-						cancelFunc()
-					case <-ctx.Done():
-					}
-				}()
-				// 建连到服务端
-				// TODO：服务发现在此展开
-				serverConn, err = forwardProxy.dialer.DialContext(ctx, "tcp", req.Host)
+	// 建立到服务端的TCP连接
+	var serverConn net.Conn
+	for i := 0; i < forwardProxy.config.RetryTimes; i++ {
+		func() { // 监听客户端侧关闭，随即中断服务端侧的请求
+			ctx, cancelFunc := context.WithCancel(context.TODO())
+			defer cancelFunc()
+			go func() {
+				select {
+				case <-req.Context().Done():
+					cancelFunc()
+				case <-ctx.Done():
+				}
 			}()
-			if err == nil {
-				break
-			}
-		}
-		if err == nil {
-			defer serverConn.Close()
-		} else {
-			break // 连接失败
-		}
 
-		// 接管客户端侧的TCP连接
-		var clientConn net.Conn
-		if hijacker, ok := rw.(http.Hijacker); ok {
-			if clientConn, _, err = hijacker.Hijack(); err != nil {
-				break
+			var dstHost string
+			var ins *service_discovery.ServiceInstance
+			// 服务发现
+			if ins, err = forwardProxy.config.Sd.SelectInstance(&service_discovery.SelectInstanceOptions{ServiceName: req.Host}); err != nil {
+				dstHost = req.Host // 服务发现失败，走域名解析
+			} else { // 服务发现成功
+				dstHost = fmt.Sprintf("%s:%d", ins.Ip, ins.Port)
 			}
-			defer clientConn.Close() // 接管成功，确保离开前关闭
-		} else { // 接管失败
+			// 建连到服务端
+			serverConn, err = forwardProxy.dialer.DialContext(ctx, "tcp", dstHost)
+		}()
+		if err == nil {
 			break
 		}
+	}
+	if err == nil {
+		defer serverConn.Close()
+	} else {
+		return // 连接失败
+	}
 
-		// 回复客户端HTTPS握手
-		if _, err = clientConn.Write([]byte("HTTP/1.0 200 Connection Established\r\n\r\n")); err != nil {
+	// 接管客户端侧的TCP连接
+	var clientConn net.Conn
+	if hijacker, ok := rw.(http.Hijacker); ok {
+		if clientConn, _, err = hijacker.Hijack(); err != nil {
 			return
 		}
-
-		// 等待转发完成
-		var transferPair = NewTransferPair(clientConn, serverConn)
-		transferPair.DoTransfer()
+		defer clientConn.Close() // 接管成功，确保离开前关闭
+	} else { // 接管失败
+		return
 	}
+
+	// 回复客户端HTTPS握手
+	if _, err = clientConn.Write([]byte("HTTP/1.0 200 Connection Established\r\n\r\n")); err != nil {
+		return
+	}
+
+	// 等待转发完成
+	var transferPair = NewTransferPair(clientConn, serverConn)
+	transferPair.DoTransfer()
 }
 
 func (forwardProxy *ForwardProxy) transferHttpRequest(req *http.Request) (resp *http.Response, respBody []byte, err error) {
-	// TODO：服务发现在此展开
+	rawHost := req.Host
+
+	// 服务发现
+	var ins *service_discovery.ServiceInstance
+	if ins, err = forwardProxy.config.Sd.SelectInstance(&service_discovery.SelectInstanceOptions{ServiceName: req.Host}); err == nil {
+		req.URL.Host = fmt.Sprintf("%s:%d", ins.Ip, ins.Port)
+		req.Header.Set("Host", rawHost)
+	}
 
 	// 发送请求
 	if resp, err = forwardProxy.transport.RoundTrip(req); err != nil {
@@ -112,7 +136,7 @@ func (forwardProxy *ForwardProxy) handleHttpRequest(rw http.ResponseWriter, req 
 	var clientLeave bool
 
 	// 重试3次
-	for i := 0; i < 3; i++ {
+	for i := 0; i < forwardProxy.config.RetryTimes; i++ {
 		// 应答
 		var resp *http.Response
 		var respBody []byte
@@ -130,7 +154,6 @@ func (forwardProxy *ForwardProxy) handleHttpRequest(rw http.ResponseWriter, req 
 				case <-ctx.Done():
 				}
 			}()
-
 			// 构造转发请求
 			remoteReq := req.Clone(ctx)
 			if reqBody == nil {
@@ -167,17 +190,22 @@ func (forwardProxy *ForwardProxy) ServeHTTP(rw http.ResponseWriter, req *http.Re
 	}
 }
 
+// 启动代理
+func (forwardProxy *ForwardProxy) Run() {
+	forwardProxy.server.ListenAndServe()
+}
+
 // 新建HTTP正向代理
-func NewForwardProxy() (forwardProxy *ForwardProxy, err error) {
+func NewForwardProxy(forwardProxyConfig *ForwardProxyConfig) (forwardProxy *ForwardProxy, err error) {
 	forwardProxy = &ForwardProxy{}
 	forwardProxy.dialer = &net.Dialer{}
 	forwardProxy.transport = http.Transport{DisableKeepAlives: true}
+	forwardProxy.config = forwardProxyConfig
 
-	// 启动HTTP服务
+	// 创建HTTP服务
 	forwardProxy.server = &http.Server{
-		Addr:    "0.0.0.0:1080",
+		Addr:    forwardProxyConfig.ListenAddr,
 		Handler: forwardProxy,
 	}
-	go forwardProxy.server.ListenAndServe()
 	return
 }

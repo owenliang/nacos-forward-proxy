@@ -8,21 +8,21 @@
 
 开发状态：
 
-* HTTP/HTTPS正向代理：90%
-* NACOS服务发现：100%
-* 熔断器：100%
-* NACOS服务注册：0%
+* 提供HTTP/HTTPS正向代理：100%
+* 代理时基于NACOS服务发现并DNS托底：100%
+* 服务发现的熔断器：100%
+* 代替应用服务注册：0%
 
 ## 体验
 
 HTTP协议正向代理：
 
 ```
-curl --proxy http://127.0.0.1:1080 'http://www.baidu.com'  -I
+curl --proxy http://127.0.0.1:1080 'http://www.baidu.com' 
 ```
 
 HTTPS协议正向代理：
 
 ```
-curl --proxy http://127.0.0.1:1080 'https://www.baidu.com'  -I
+curl --proxy http://127.0.0.1:1080 'https://www.baidu.com' 
 ```
