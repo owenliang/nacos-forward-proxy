@@ -32,17 +32,17 @@ func TestDiscovery(t *testing.T) {
 		t.Fatal()
 	}
 
-	breaker.recordSuccess()
+	breaker.RecordSuccess()
 	breaker.Debug()
 	time.Sleep(1 * time.Second)
 
-	breaker.recordSuccess()
+	breaker.RecordSuccess()
 	breaker.Debug()
 	time.Sleep(1 * time.Second)
 
-	breaker.recordFail()
-	breaker.recordFail()
-	breaker.recordFail()
+	breaker.RecordFail()
+	breaker.RecordFail()
+	breaker.RecordFail()
 	breaker.Debug()
 	// 全断开状态
 	if breaker.Status() != BREAKER_STATUS_DISCONNECT {
@@ -56,7 +56,7 @@ func TestDiscovery(t *testing.T) {
 	}
 
 	// 再失败1次，重新回到全断开状态
-	breaker.recordFail()
+	breaker.RecordFail()
 	if breaker.Status() != BREAKER_STATUS_DISCONNECT {
 		t.Fatal()
 	}
@@ -69,7 +69,7 @@ func TestDiscovery(t *testing.T) {
 
 	// 连续成功101次，重回全连接状态
 	for i := 0; i < 101; i++ {
-		breaker.recordSuccess()
+		breaker.RecordSuccess()
 	}
 	if breaker.Status() != BREAKER_STATUS_CONNECT {
 		t.Fatal()

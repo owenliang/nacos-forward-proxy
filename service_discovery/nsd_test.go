@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-/*
 func TestRegister(t *testing.T) {
 	serviceName := "liangdong"
 	ip := "127.0.0.1"
@@ -51,7 +50,7 @@ func TestRegister(t *testing.T) {
 		time.Sleep(31 * time.Second)
 	}
 }
-*/
+
 func TestDiscovery(t *testing.T) {
 	sdConfig := &NacosSDConfig{
 		Namespace:  "myns",

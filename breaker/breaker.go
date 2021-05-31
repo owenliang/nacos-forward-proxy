@@ -101,7 +101,7 @@ func (breaker *Breaker) update() {
 }
 
 // 记录成功
-func (breaker *Breaker) recordSuccess() {
+func (breaker *Breaker) RecordSuccess() {
 	breaker.mu.Lock()
 	defer breaker.mu.Unlock()
 
@@ -121,7 +121,7 @@ func (breaker *Breaker) recordSuccess() {
 }
 
 // 记录失败
-func (breaker *Breaker) recordFail() {
+func (breaker *Breaker) RecordFail() {
 	breaker.mu.Lock()
 	defer breaker.mu.Unlock()
 
@@ -145,7 +145,7 @@ func (breaker *Breaker) recordFail() {
 }
 
 // 是否允许操作？
-func (breaker *Breaker) ok() bool {
+func (breaker *Breaker) Ok() bool {
 	breaker.mu.Lock()
 	defer breaker.mu.Unlock()
 

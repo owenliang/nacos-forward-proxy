@@ -8,10 +8,10 @@
 
 开发状态：
 
-* HTTP/HTTPS正向代理：完成
-* NACOS服务发现：TODO
-* 熔断器：TODO
-* NACOS服务注册：TODO
+* HTTP/HTTPS正向代理：90%
+* NACOS服务发现：100%
+* 熔断器：100%
+* NACOS服务注册：0%
 
 ## 体验
 

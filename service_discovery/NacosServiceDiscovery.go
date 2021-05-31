@@ -2,8 +2,11 @@ package service_discovery
 
 import (
 	"errors"
+	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/owenliang/nacos-reverse-proxy/breaker"
 
 	"github.com/nacos-group/nacos-sdk-go/clients"
 	"github.com/nacos-group/nacos-sdk-go/clients/naming_client"
@@ -19,8 +22,8 @@ type NacosInstance struct {
 	port    uint64
 	weight  float64
 	cluster string
-	mu      sync.Mutex
 	service *NacosService
+	breaker *breaker.Breaker // 熔断器
 }
 
 const (
@@ -51,13 +54,11 @@ func (nacosService *NacosService) markInstance(id string, success bool) {
 		return
 	}
 
-	// todo：给instance的熔断器输入suceess
-	instance.mu.Lock()
-	defer instance.mu.Unlock()
+	// 给熔断器更新计数
 	if success {
-		instance.id = id
+		instance.breaker.RecordSuccess()
 	} else {
-		instance.id = id
+		instance.breaker.RecordFail()
 	}
 }
 
@@ -104,8 +105,23 @@ func (nacosService *NacosService) syncNacosServiceForever() {
 		instanceList := make([]*NacosInstance, 0, len(instanceMapping))
 		for id, ins := range instanceMapping {
 			if oldIns, exist := oldInstanceMapping[id]; exist {
-				// todo：拷贝之前instance的熔断器到新实例对象
-				ins.id = oldIns.id
+				// 拷贝之前instance的熔断器到新实例对象
+				ins.breaker = oldIns.breaker
+			} else {
+				ins.breaker = breaker.NewBreaker(&breaker.Options{
+					DisonnectPeriod:      5 * time.Second,
+					RecoverySuccessTimes: 100,
+					WindowSize:           60,
+					DecideToDisconnect: func(bs []*breaker.Bucket) bool { // 熔断策略
+						fail := 0
+						success := 0
+						for _, b := range bs {
+							success += b.Success
+							fail += b.Fail
+						}
+						return fail != 0 && success != 0 && success+fail >= 5 && float64(fail) >= float64(success)*1.2
+					},
+				})
 			}
 			instanceList = append(instanceList, ins)
 		}
@@ -265,17 +281,28 @@ func (nsd *NacosServiceDiscovery) SelectInstance(options *SelectInstanceOptions)
 
 	// 获取实例列表
 	instances, err := nacosService.getInstances()
-	if err == nil {
-		if len(instances) > 0 { // todo：节点选择策略的实现
-			instance = &ServiceInstance{
-				ServiceName: options.ServiceName,
-				ID:          instances[0].id,
-				Ip:          instances[0].ip,
-				Port:        instances[0].port,
+	if err == nil && len(instances) > 0 {
+		// 挑出候选节点
+		candidateInstances := make([]*NacosInstance, 0, len(instances))
+		for _, ins := range instances {
+			if ins.breaker.Ok() {
+				candidateInstances = append(candidateInstances, ins)
 			}
-		} else {
-			err = errors.New("没有可用instance")
 		}
+		// 如果没有健康的，那么所有节点都加入候选
+		if len(candidateInstances) == 0 {
+			candidateInstances = instances
+		}
+		// 随机选一个返回
+		idx := rand.Int() % len(candidateInstances)
+		instance = &ServiceInstance{
+			ServiceName: options.ServiceName,
+			ID:          instances[idx].id,
+			Ip:          instances[idx].ip,
+			Port:        instances[idx].port,
+		}
+	} else {
+		err = errors.New("没有可用instance")
 	}
 	return
 }
