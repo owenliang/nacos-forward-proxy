@@ -39,7 +39,7 @@ func main() {
 	}
 	go proxy.Run()
 
-	// TODO: 提供服务注册/反注册的admin接口
+	// 探测应用健康，完成服务注册，退出前取消服务注册，退出前确保应用先退出。
 	for {
 		time.Sleep(1 * time.Second)
 	}
