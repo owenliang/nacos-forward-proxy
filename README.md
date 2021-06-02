@@ -43,19 +43,21 @@ proxy部署到k8s需要注意和应用容器之间的启动次序和流量无损
 
 ## 体验
 
-启动服务：
+在本地启动nacos server，默认配置即可。
+
+启动proxy：
 
 ```
 go run main.go -cluster default -group default -namespace default -nodes 127.0.0.1:8848 -listen :1080
 ```
 
-HTTP协议正向代理：
+验证HTTP协议正向代理：
 
 ```
 curl --proxy http://127.0.0.1:1080 'http://www.baidu.com' 
 ```
 
-HTTPS协议正向代理：
+验证HTTPS协议正向代理：
 
 ```
 curl --proxy http://127.0.0.1:1080 'https://www.baidu.com' 
